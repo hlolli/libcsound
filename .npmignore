@@ -11,3 +11,5 @@ src
 .shadow-cljs
 yarn.lock
 release.sh
+nix
+bak
