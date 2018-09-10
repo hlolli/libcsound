@@ -1,5 +1,5 @@
 { stdenv, nodejs, fetchFromGitHub, fetchurl,
-  flex, bison, alsaLib, cmake, libsndfile}:
+  flex, bison, alsaLib, cmake, libsndfile, faust}:
 
 let
     emscriptenfastcomp = with import <nixpkgs> {}; callPackage ./emscripten/fastcomp {};
@@ -8,12 +8,11 @@ let
 in stdenv.mkDerivation rec {
     version = "6.11.0-0";
     name = "csound_wasm-${version}";
-
     src = fetchFromGitHub {
       owner = "csound";
       repo = "csound";
-      rev = "9b19ad44a81916d322588d061e4eabfe64e9a705";
-      sha256 = "0rvbrlq3q4miyr0z7b0820a4bg2a4l53594m7p8qjylf98ri0b0l";
+      rev = "9bf43d212db5e0de5cf46302e0b7687857fdd003";
+      sha256 = "1l77pfrxkjry74vrk7pivp2i2g84wp8bbcdjxhbd2a3b77bgjas5";
     };
 
     sndfile = fetchurl {
@@ -21,7 +20,7 @@ in stdenv.mkDerivation rec {
       sha256 = "59016dbd326abe7e2366ded5c344c853829bebfd1702ef26a07ef662d6aa4882";
     };
 
-    buildInputs = [ nodejs cmake flex bison alsaLib libsndfile];
+    buildInputs = [ nodejs cmake flex bison alsaLib libsndfile faust ];
 
     buildPhase = ''
       export EMSCRIPTEN=${emscripten}/share/emscripten
@@ -63,6 +62,8 @@ in stdenv.mkDerivation rec {
             -DUSE_DOUBLE=NO \
             -DBUILD_MULTI_CORE=0 \
             -DBUILD_JACK_OPCODES=0 \
+            -DBUILD_FAUST_OPCODES=1 \
+            -DBUILD_PADSYNTH_OPCODES=1 \
             -DEMSCRIPTEN=1 \
             -DCMAKE_TOOLCHAIN_FILE=$EMSCRIPTEN/cmake/Modules/Platform/Emscripten.cmake \
             -DCMAKE_MODULE_PATH=$EMSCRIPTEN/cmake \
@@ -79,6 +80,8 @@ in stdenv.mkDerivation rec {
             ../..
 
       emmake make csound-static -j6
+      EMCC_DEBUG=1 emmake make padsynth -j6
+
       emcc -s LINKABLE=1 \
            -s ASSERTIONS=0 \
            ../src/FileList.c \
@@ -113,7 +116,8 @@ in stdenv.mkDerivation rec {
     '';
 
     installPhase = ''
-      mkdir -p $out
+      mkdir -p $out $out/debug
+      cp -rf ./* $out/debug
       cp ./libcsound.js $out
       cp ./libcsound.wasm $out
     '';
