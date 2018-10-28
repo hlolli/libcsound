@@ -6,13 +6,13 @@ let
     emscripten = with import <nixpkgs> {}; callPackage ./emscripten {};
 
 in stdenv.mkDerivation rec {
-    version = "6.11.0-0";
+    version = "6.12.0-0";
     name = "csound_wasm-${version}";
     src = fetchFromGitHub {
       owner = "csound";
       repo = "csound";
-      rev = "9bf43d212db5e0de5cf46302e0b7687857fdd003";
-      sha256 = "1l77pfrxkjry74vrk7pivp2i2g84wp8bbcdjxhbd2a3b77bgjas5";
+      rev = "52c30628b3810311418e45abbfb47a7b4dad0a1e";
+      sha256 = "1f3l3ynvp5x91x6gl83hasn0mi558prh3r3qrnpgnfyfg8m7g159";
     };
 
     sndfile = fetchurl {
