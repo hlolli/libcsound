@@ -5,7 +5,7 @@ cd nix
 
 nix-build -E 'with import <nixpkgs> {}; callPackage ./wasm.nix {}'
 
-cp -Lrf ./result/* ../
+sudo cp -Lrf ./result/* ../
 
 cd ../
 

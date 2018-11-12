@@ -1,18 +1,21 @@
 { stdenv, nodejs, fetchFromGitHub, fetchurl,
-  flex, bison, alsaLib, cmake, libsndfile, faust}:
+  flex, bison, alsaLib, cmake, libsndfile, faust,
+  buildEmscriptenPackage, pkgconfig, autoconf,
+  automake, libtool, gnumake, libxml2, python,
+  openjdk, json_c, emscripten, emscriptenfastcomp  }:
 
-let
-    emscriptenfastcomp = with import <nixpkgs> {}; callPackage ./emscripten/fastcomp {};
-    emscripten = with import <nixpkgs> {}; callPackage ./emscripten {};
+# let
+    # emscriptenfastcomp = with import <nixpkgs> {}; callPackage ./emscripten/fastcomp {};
+    # emscripten = with import <nixpkgs> {}; callPackage ./emscripten {};
 
-in stdenv.mkDerivation rec {
+stdenv.mkDerivation rec {
     version = "6.12.0-0";
     name = "csound_wasm-${version}";
     src = fetchFromGitHub {
       owner = "csound";
       repo = "csound";
-      rev = "52c30628b3810311418e45abbfb47a7b4dad0a1e";
-      sha256 = "1f3l3ynvp5x91x6gl83hasn0mi558prh3r3qrnpgnfyfg8m7g159";
+      rev = "e5073d3f22c77c5bfa270d51db31a3266671ef56";
+      sha256 = "1rc9bi0wb6br5bdpszv5w8a3mdvlaw0jqkwg0cpr1jgy1ls34zmb";
     };
 
     sndfile = fetchurl {
@@ -20,12 +23,18 @@ in stdenv.mkDerivation rec {
       sha256 = "59016dbd326abe7e2366ded5c344c853829bebfd1702ef26a07ef662d6aa4882";
     };
 
-    buildInputs = [ nodejs cmake flex bison alsaLib libsndfile faust ];
+    buildInputs = [ nodejs cmake flex bison alsaLib
+                    libsndfile faust pkgconfig autoconf
+                    automake libtool gnumake libxml2 nodejs
+                    openjdk json_c emscripten emscriptenfastcomp
+                    python ];
+
+    nativeBuildInputs = [ pkgconfig ];
 
     buildPhase = ''
       export EMSCRIPTEN=${emscripten}/share/emscripten
       export EM_CACHE=`pwd`/.emscripten_cache
-      export PATH=$PATH:${emscripten}/bin
+      export PATH=$PATH:${emscripten}/bin:${emscripten}/share/emscripten
       cd ../
       echo "#define USE_DOUBLE" > include/float-version.h
       cd Emscripten
@@ -37,7 +46,7 @@ in stdenv.mkDerivation rec {
         ./patches/sndfile.c.patch
       cd deps/libsndfile-1.0.25
 
-      emconfigure ./configure \
+      ${emscripten}/bin/emconfigure ./configure \
         --enable-static \
         --disable-shared \
         --disable-libtool-lock \
@@ -46,7 +55,7 @@ in stdenv.mkDerivation rec {
         --disable-alsa \
         --disable-external-libs \
         --build=i686
-        
+
       emmake make
       cp ./src/.libs/libsndfile.a libsndfile-wasm.a
 
@@ -110,6 +119,7 @@ in stdenv.mkDerivation rec {
           -s MODULARIZE=1 \
           -s EXPORT_NAME=\"'libcsound'\" \
           -s EXTRA_EXPORTED_RUNTIME_METHODS='["FS", "ccall", "cwrap"]' \
+          -s BINARYEN_TRAP_MODE=\"'clamp'\" \
           CsoundObj.bc FileList.bc libcsound.a \
           ../deps/libsndfile-1.0.25/libsndfile-wasm.a \
           -o libcsound.js
