@@ -13,3 +13,4 @@ yarn.lock
 release.sh
 nix
 bak
+debug

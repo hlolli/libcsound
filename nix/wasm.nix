@@ -4,10 +4,6 @@
   automake, libtool, gnumake, libxml2, python,
   openjdk, json_c, emscripten, emscriptenfastcomp  }:
 
-# let
-    # emscriptenfastcomp = with import <nixpkgs> {}; callPackage ./emscripten/fastcomp {};
-    # emscripten = with import <nixpkgs> {}; callPackage ./emscripten {};
-
 stdenv.mkDerivation rec {
     version = "6.12.0-0";
     name = "csound_wasm-${version}";
@@ -96,7 +92,7 @@ stdenv.mkDerivation rec {
            ../src/FileList.c \
            -Iinclude \
            -o FileList.bc
-           
+
       emcc -s LINKABLE=1 \
            -s ASSERTIONS=0 \
            ../src/CsoundObj.c \
