@@ -4,30 +4,50 @@
   automake, libtool, gnumake, libxml2, python,
   openjdk, json_c, emscripten, emscriptenfastcomp  }:
 
-stdenv.mkDerivation rec {
-    version = "6.12.0-0";
-    name = "csound_wasm-${version}";
-    src = fetchFromGitHub {
-      owner = "csound";
-      repo = "csound";
-      rev = "e5073d3f22c77c5bfa270d51db31a3266671ef56";
-      sha256 = "1rc9bi0wb6br5bdpszv5w8a3mdvlaw0jqkwg0cpr1jgy1ls34zmb";
-    };
+let csound-repo-data = with builtins;
+      fromJSON (readFile ./csound-repo-data.json);
+    compileEmcc = env: ''
+      emcc -v -O3 -g4 \
+          -DINIT_STATIC_MODULES=0 \
+          -s WASM=1 \
+          -s ASSERTIONS=1 \
+          -s "BINARYEN_METHOD='native-wasm'" \
+          -s LINKABLE=1 \
+          -s RESERVED_FUNCTION_POINTERS=1 \
+          -s TOTAL_MEMORY=268435456 \
+          -s ALLOW_MEMORY_GROWTH=1 \
+          -s NO_EXIT_RUNTIME=0 \
+          -s BINARYEN_ASYNC_COMPILATION=1 \
+          -s MODULARIZE=1 \
+          -s EXPORT_NAME=\"'libcsound'\" \
+          -s EXTRA_EXPORTED_RUNTIME_METHODS='["FS", "ccall", "cwrap"]' \
+          -s BINARYEN_TRAP_MODE=\"'clamp'\" \
+          -s ENVIRONMENT=${env} \
+          -s SINGLE_FILE=1 \
+          CsoundObj.bc FileList.bc libcsound.a \
+          ../deps/libsndfile-1.0.25/libsndfile-wasm.a \
+          -o libcsound_${env}.js
+  '';
 
     sndfile = fetchurl {
       url = "http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.25.tar.gz";
       sha256 = "59016dbd326abe7e2366ded5c344c853829bebfd1702ef26a07ef662d6aa4882";
     };
 
-    buildInputs = [ nodejs cmake flex bison alsaLib
-                    libsndfile faust pkgconfig autoconf
-                    automake libtool gnumake libxml2 nodejs
-                    openjdk json_c emscripten emscriptenfastcomp
-                    python ];
+in stdenv.mkDerivation {
+  version = csound-repo-data.rev;
+  name = "libcsound-wasm-${csound-repo-data.rev}";
+  src = fetchFromGitHub csound-repo-data;
 
-    nativeBuildInputs = [ pkgconfig ];
+  buildInputs = [ nodejs cmake flex bison alsaLib
+                  libsndfile faust pkgconfig autoconf
+                  automake libtool gnumake libxml2 nodejs
+                  openjdk json_c emscripten emscriptenfastcomp
+                  python ];
 
-    buildPhase = ''
+  nativeBuildInputs = [ pkgconfig ];
+
+  buildPhase = ''
       export EMSCRIPTEN=${emscripten}/share/emscripten
       export EM_CACHE=`pwd`/.emscripten_cache
       export PATH=$PATH:${emscripten}/bin:${emscripten}/share/emscripten
@@ -100,32 +120,14 @@ stdenv.mkDerivation rec {
            -Iinclude \
            -o CsoundObj.bc
 
-      # Build libcsound.js
-      emcc -v -O2 -g4 \
-          -DINIT_STATIC_MODULES=0 \
-          -s WASM=1 \
-          -s ASSERTIONS=1 \
-          -s "BINARYEN_METHOD='native-wasm'" \
-          -s LINKABLE=1 \
-          -s RESERVED_FUNCTION_POINTERS=1 \
-          -s TOTAL_MEMORY=268435456 \
-          -s ALLOW_MEMORY_GROWTH=1 \
-          -s NO_EXIT_RUNTIME=0 \
-          -s BINARYEN_ASYNC_COMPILATION=1 \
-          -s MODULARIZE=1 \
-          -s EXPORT_NAME=\"'libcsound'\" \
-          -s EXTRA_EXPORTED_RUNTIME_METHODS='["FS", "ccall", "cwrap"]' \
-          -s BINARYEN_TRAP_MODE=\"'clamp'\" \
-          CsoundObj.bc FileList.bc libcsound.a \
-          ../deps/libsndfile-1.0.25/libsndfile-wasm.a \
-          -o libcsound.js
-    '';
+      # Build libcsound_node.js
+      ${compileEmcc "node"}
+      # Build libcsound_web.js
+      ${compileEmcc "web"}
+  '';
 
-    installPhase = ''
-      mkdir -p $out $out/debug
-      cp -rf ./* $out/debug
-      cp ./libcsound.js $out
-      cp ./libcsound.wasm $out
+  installPhase = ''
+      mkdir -p $out/lib
+      cp ./libcsound*.js $out/lib
     '';
-
 }
