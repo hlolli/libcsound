@@ -4,6 +4,7 @@
   automake, libtool, gnumake, libxml2, python,
   openjdk, json_c, emscripten, emscriptenfastcomp  }:
 
+# nix-prefetch-github csound csound > csound-repo-data.json
 let csound-repo-data = with builtins;
       fromJSON (readFile ./csound-repo-data.json);
     compileEmcc = env: ''
@@ -120,9 +121,9 @@ in stdenv.mkDerivation {
            -Iinclude \
            -o CsoundObj.bc
 
-      # Build libcsound_node.js
+      # Build libcsound_nodejs.js
       ${compileEmcc "node"}
-      # Build libcsound_web.js
+      # Build libcsound_browser.js
       ${compileEmcc "web"}
   '';
 
