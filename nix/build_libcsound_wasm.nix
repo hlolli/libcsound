@@ -19,12 +19,12 @@ let csound-repo-data = with builtins;
           -s ALLOW_MEMORY_GROWTH=1 \
           -s NO_EXIT_RUNTIME=0 \
           -s BINARYEN_ASYNC_COMPILATION=1 \
-          -s MODULARIZE=1 \
+          -s MODULARIZE=0 \
           -s EXPORT_NAME=\"'libcsound'\" \
           -s EXTRA_EXPORTED_RUNTIME_METHODS='["FS", "ccall", "cwrap"]' \
           -s BINARYEN_TRAP_MODE=\"'clamp'\" \
           -s ENVIRONMENT=${env} \
-          -s SINGLE_FILE=1 \
+          -s SINGLE_FILE=0 \
           CsoundObj.bc FileList.bc libcsound.a \
           ../deps/libsndfile-1.0.25/libsndfile-wasm.a \
           -o libcsound_${env}.js
@@ -129,6 +129,6 @@ in stdenv.mkDerivation {
 
   installPhase = ''
       mkdir -p $out/lib
-      cp ./libcsound*.js $out/lib
+      cp ./libcsound_* $out/lib
     '';
 }

@@ -1,0 +1,465 @@
+diff --git a/Top/csound.c b/Top/csound.c
+index ed75478cc..b8346522b 100644
+--- a/Top/csound.c
++++ b/Top/csound.c
+@@ -1490,101 +1490,6 @@ inline void advanceINSDSPointer(INSDS ***start, int num)
+     **start = s;
+ }
+ 
+-int dag_get_task(CSOUND *csound, int index, int numThreads, int next_task);
+-int dag_end_task(CSOUND *csound, int task);
+-void dag_build(CSOUND *csound, INSDS *chain);
+-void dag_reinit(CSOUND *csound);
+-
+-inline static int nodePerf(CSOUND *csound, int index, int numThreads)
+-{
+-    INSDS *insds = NULL;
+-    OPDS  *opstart = NULL;
+-    int played_count = 0;
+-    int which_task;
+-    INSDS **task_map = (INSDS**)csound->dag_task_map;
+-    double time_end;
+-#define INVALID (-1)
+-#define WAIT    (-2)
+-    int next_task = INVALID;
+-    IGN(index);
+-
+-    while (1) {
+-      int done;
+-      which_task = dag_get_task(csound, index, numThreads, next_task);
+-      //printf("******** Select task %d\n", which_task);
+-      if (which_task==WAIT) continue;
+-      if (which_task==INVALID) return played_count;
+-         /* VL: the validity of icurTime needs to be checked */
+-        time_end = (csound->ksmps+csound->icurTime)/csound->esr;
+-        insds = task_map[which_task];
+-        if (insds->offtim > 0 && time_end > insds->offtim){
+-            /* this is the last cycle of performance */
+-            insds->ksmps_no_end = insds->no_end;
+-          }
+-#if defined(MSVC)
+-        done = InterlockedExchangeAdd(&insds->init_done, 0);
+-#elif defined(HAVE_ATOMIC_BUILTIN)
+-        done = __atomic_load_n((int *) &insds->init_done, __ATOMIC_SEQ_CST);
+-#else
+-        done = insds->init_done;
+-#endif
+-        if (done) {
+-          opstart = (OPDS*)task_map[which_task];
+-          if (insds->ksmps == csound->ksmps) {
+-            insds->spin = csound->spin;
+-            insds->spout = csound->spraw;
+-            insds->kcounter =  csound->kcounter;
+-            while ((opstart = opstart->nxtp) != NULL) {
+-              /* In case of jumping need this repeat of opstart */
+-              opstart->insdshead->pds = opstart;
+-              (*opstart->opadr)(csound, opstart); /* run each opcode */
+-              opstart = opstart->insdshead->pds;
+-            }
+-          } else {
+-            int i, n = csound->nspout, start = 0;
+-            int lksmps = insds->ksmps;
+-            int incr = csound->nchnls*lksmps;
+-            int offset =  insds->ksmps_offset;
+-            int early = insds->ksmps_no_end;
+-            OPDS  *opstart;
+-            insds->spin = csound->spin;
+-            insds->spout = csound->spraw;
+-            insds->kcounter =  csound->kcounter*csound->ksmps;
+-
+-            /* we have to deal with sample-accurate code
+-               whole CS_KSMPS blocks are offset here, the
+-               remainder is left to each opcode to deal with.
+-            */
+-            while (offset >= lksmps) {
+-              offset -= lksmps;
+-              start += csound->nchnls;
+-            }
+-            insds->ksmps_offset = offset;
+-            if (UNLIKELY(early)) {
+-              n -= (early*csound->nchnls);
+-              insds->ksmps_no_end = early % lksmps;
+-            }
+-
+-            for (i=start; i < n; i+=incr, insds->spin+=incr, insds->spout+=incr) {
+-              opstart = (OPDS*) insds;
+-              while ((opstart = opstart->nxtp) != NULL) {
+-                opstart->insdshead->pds = opstart;
+-                (*opstart->opadr)(csound, opstart); /* run each opcode */
+-                opstart = opstart->insdshead->pds;
+-              }
+-              insds->kcounter++;
+-            }
+-          }
+-          insds->ksmps_offset = 0; /* reset sample-accuracy offset */
+-          insds->ksmps_no_end = 0;  /* reset end of loop samples */
+-          played_count++;
+-        }
+-        //printf("******** finished task %d\n", which_task);
+-        next_task = dag_end_task(csound, which_task);
+-    }
+-    return played_count;
+-}
+-
+ inline static void make_interleave(CSOUND *csound)
+ {
+     uint32_t nsmps = csound->ksmps, i, j, k=0;
+@@ -1653,150 +1558,6 @@ unsigned long kperfThread(void * cs)
+     }
+ }
+ 
+-int kperf_nodebug(CSOUND *csound)
+-{
+-    INSDS *ip;
+-    /* update orchestra time */
+-    csound->kcounter = ++(csound->global_kcounter);
+-    csound->icurTime += csound->ksmps;
+-    csound->curBeat += csound->curBeat_inc;
+-
+-   /* call message_dequeue to run API calls */
+-    message_dequeue(csound);
+-
+-
+-    /* if skipping time on request by 'a' score statement: */
+-    if (UNLIKELY(UNLIKELY(csound->advanceCnt))) {
+-      csound->advanceCnt--;
+-      return 1;
+-    }
+-    /* if i-time only, return now */
+-    if (UNLIKELY(csound->initonly))
+-      return 1;
+-    /* PC GUI needs attention, but avoid excessively frequent */
+-    /* calls of csoundYield() */
+-    if (UNLIKELY(--(csound->evt_poll_cnt) < 0)) {
+-      csound->evt_poll_cnt = csound->evt_poll_maxcnt;
+-      if (UNLIKELY(!csoundYield(csound))) csound->LongJmp(csound, 1);
+-    }
+-
+-    /* for one kcnt: */
+-    if (csound->oparms_.sfread)         /*   if audio_infile open  */
+-      csound->spinrecv(csound);         /*      fill the spin buf  */
+-    csound->spoutactive = 0;            /*   make spout inactive   */
+-    /* clear spout */
+-    memset(csound->spout, 0, csound->nspout*sizeof(MYFLT));
+-    memset(csound->spraw, 0, csound->nspout*sizeof(MYFLT));
+-    ip = csound->actanchor.nxtact;
+-
+-    if (ip != NULL) {
+-      /* There are 2 partitions of work: 1st by inso,
+-         2nd by inso count / thread count. */
+-      if (csound->multiThreadedThreadInfo != NULL) {
+-        if (csound->dag_changed) dag_build(csound, ip);
+-        else dag_reinit(csound);     /* set to initial state */
+-
+-        /* process this partition */
+-        csound->WaitBarrier(csound->barrier1);
+-
+-        (void) nodePerf(csound, 0, 1);
+-
+-        /* wait until partition is complete */
+-        csound->WaitBarrier(csound->barrier2);
+-        csound->multiThreadedDag = NULL;
+-      }
+-      else {
+-        int done;
+-        double time_end = (csound->ksmps+csound->icurTime)/csound->esr;
+-
+-        while (ip != NULL) {                /* for each instr active:  */
+-          INSDS *nxt = ip->nxtact;
+-          if (UNLIKELY(csound->oparms->sampleAccurate &&
+-                       ip->offtim > 0                 &&
+-                       time_end > ip->offtim)) {
+-            /* this is the last cycle of performance */
+-            //   csound->Message(csound, "last cycle %d: %f %f %d\n",
+-            //       ip->insno, csound->icurTime/csound->esr,
+-            //          ip->offtim, ip->no_end);
+-            ip->ksmps_no_end = ip->no_end;
+-          }
+-          done = ATOMIC_GET(ip->init_done);
+-          if (done == 1) {/* if init-pass has been done */
+-            int error = 0;
+-            OPDS  *opstart = (OPDS*) ip;
+-            ip->spin = csound->spin;
+-            ip->spout = csound->spraw;
+-            ip->kcounter =  csound->kcounter;
+-            if (ip->ksmps == csound->ksmps) {
+-              while (error == 0 &&
+-                     (opstart = opstart->nxtp) != NULL &&
+-                     ip->actflg) {
+-                opstart->insdshead->pds = opstart;
+-                error = (*opstart->opadr)(csound, opstart); /* run each opcode */
+-                opstart = opstart->insdshead->pds;
+-              }
+-            } else {
+-                int error = 0;
+-                int i, n = csound->nspout, start = 0;
+-                int lksmps = ip->ksmps;
+-                int incr = csound->nchnls*lksmps;
+-                int offset =  ip->ksmps_offset;
+-                int early = ip->ksmps_no_end;
+-                OPDS  *opstart;
+-                ip->spin = csound->spin;
+-                ip->spout = csound->spraw;
+-                ip->kcounter =  csound->kcounter*csound->ksmps/lksmps;
+-
+-                /* we have to deal with sample-accurate code
+-                   whole CS_KSMPS blocks are offset here, the
+-                   remainder is left to each opcode to deal with.
+-                */
+-                while (offset >= lksmps) {
+-                  offset -= lksmps;
+-                  start += csound->nchnls;
+-                }
+-                ip->ksmps_offset = offset;
+-                if (UNLIKELY(early)) {
+-                  n -= (early*csound->nchnls);
+-                  ip->ksmps_no_end = early % lksmps;
+-                }
+-
+-                for (i=start; i < n; i+=incr, ip->spin+=incr, ip->spout+=incr) {
+-                  opstart = (OPDS*) ip;
+-                  while (error ==  0 && (opstart = opstart->nxtp) != NULL
+-                         && ip->actflg) {
+-                    opstart->insdshead->pds = opstart;
+-                    error = (*opstart->opadr)(csound, opstart); /* run each opcode */
+-                    opstart = opstart->insdshead->pds;
+-                  }
+-                  ip->kcounter++;
+-                }
+-            }
+-          }
+-          /*else csound->Message(csound, "time %f\n",
+-                                 csound->kcounter/csound->ekr);*/
+-          ip->ksmps_offset = 0; /* reset sample-accuracy offset */
+-          ip->ksmps_no_end = 0; /* reset end of loop samples */
+-          ip = nxt; /* but this does not allow for all deletions */
+-        }
+-      }
+-    }
+-
+-    if (!csound->spoutactive) { /* results now in spout? */
+-      memset(csound->spout, 0, csound->nspout * sizeof(MYFLT));
+-      memset(csound->spraw, 0, csound->nspout * sizeof(MYFLT));
+-    }
+-    make_interleave(csound);
+-    csound->spoutran(csound); /* send to audio_out */
+-    //#ifdef ANDROID
+-    //struct timespec ts;
+-    //clock_gettime(CLOCK_MONOTONIC, &ts);
+-    //csound->Message(csound, "kperf kcount, %d,%d.%06d\n",
+-    //                csound->kcounter, ts.tv_sec, ts.tv_nsec/1000);
+-    //#endif
+-    return 0;
+-}
+-
+ static inline void opcode_perf_debug(CSOUND *csound,
+                                      csdebug_data_t *data, INSDS *ip)
+ {
+@@ -1877,207 +1638,6 @@ static inline void process_debug_buffers(CSOUND *csound, csdebug_data_t *data)
+     }
+ }
+ 
+-int kperf_debug(CSOUND *csound)
+-{
+-    INSDS *ip;
+-    csdebug_data_t *data = (csdebug_data_t *) csound->csdebug_data;
+-
+-    /* call message_dequeue to run API calls */
+-    message_dequeue(csound);
+-
+-    if (!data || data->status != CSDEBUG_STATUS_STOPPED) {
+-      /* update orchestra time */
+-      csound->kcounter = ++(csound->global_kcounter);
+-      csound->icurTime += csound->ksmps;
+-      csound->curBeat += csound->curBeat_inc;
+-    }
+-
+-    /* if skipping time on request by 'a' score statement: */
+-    if (UNLIKELY(csound->advanceCnt)) {
+-      csound->advanceCnt--;
+-      return 1;
+-    }
+-    /* if i-time only, return now */
+-    if (UNLIKELY(csound->initonly))
+-      return 1;
+-    /* PC GUI needs attention, but avoid excessively frequent */
+-    /* calls of csoundYield() */
+-    if (UNLIKELY(--(csound->evt_poll_cnt) < 0)) {
+-      csound->evt_poll_cnt = csound->evt_poll_maxcnt;
+-      if (UNLIKELY(!csoundYield(csound))) csound->LongJmp(csound, 1);
+-    }
+-
+-    if (data) { /* process debug commands*/
+-      process_debug_buffers(csound, data);
+-    }
+-
+-    if (!data || data->status == CSDEBUG_STATUS_RUNNING)
+-    {
+-      /* for one kcnt: */
+-      if (csound->oparms_.sfread)         /*   if audio_infile open  */
+-        csound->spinrecv(csound);         /*      fill the spin buf  */
+-      csound->spoutactive = 0;            /*   make spout inactive   */
+-      /* clear spout */
+-      memset(csound->spout, 0, csound->nspout*sizeof(MYFLT));
+-      memset(csound->spraw, 0, csound->nspout*sizeof(MYFLT));
+-    }
+-
+-    ip = csound->actanchor.nxtact;
+-    /* Process debugger commands */
+-    debug_command_t command = CSDEBUG_CMD_NONE;
+-    if (data) {
+-      csoundReadCircularBuffer(csound, data->cmd_buffer, &command, 1);
+-      if (command == CSDEBUG_CMD_STOP && data->status != CSDEBUG_STATUS_STOPPED) {
+-        data->debug_instr_ptr = ip;
+-        data->status = CSDEBUG_STATUS_STOPPED;
+-        csoundDebuggerBreakpointReached(csound);
+-      }
+-      if (command == CSDEBUG_CMD_CONTINUE &&
+-          data->status == CSDEBUG_STATUS_STOPPED) {
+-        if (data->cur_bkpt && data->cur_bkpt->skip <= 2) data->cur_bkpt->count = 2;
+-        data->status = CSDEBUG_STATUS_RUNNING;
+-        if (data->debug_instr_ptr) {
+-          /* if not NULL, resume from last active */
+-          ip = data->debug_instr_ptr;
+-          data->debug_instr_ptr = NULL;
+-        }
+-      }
+-      if (command == CSDEBUG_CMD_NEXT && data->status == CSDEBUG_STATUS_STOPPED) {
+-          data->status = CSDEBUG_STATUS_NEXT;
+-      }
+-    }
+-    if (ip != NULL && data != NULL && (data->status != CSDEBUG_STATUS_STOPPED) ) {
+-      /* There are 2 partitions of work: 1st by inso,
+-         2nd by inso count / thread count. */
+-      if (csound->multiThreadedThreadInfo != NULL) {
+-        if (csound->dag_changed) dag_build(csound, ip);
+-        else dag_reinit(csound);     /* set to initial state */
+-
+-        /* process this partition */
+-        csound->WaitBarrier(csound->barrier1);
+-
+-        (void) nodePerf(csound, 0, 1);
+-
+-        /* wait until partition is complete */
+-        csound->WaitBarrier(csound->barrier2);
+-        csound->multiThreadedDag = NULL;
+-      }
+-      else {
+-        int done;
+-        double time_end = (csound->ksmps+csound->icurTime)/csound->esr;
+-
+-        while (ip != NULL) {                /* for each instr active:  */
+-          if (UNLIKELY(csound->oparms->sampleAccurate &&
+-                       ip->offtim > 0                 &&
+-                       time_end > ip->offtim)) {
+-            /* this is the last cycle of performance */
+-            //   csound->Message(csound, "last cycle %d: %f %f %d\n",
+-            //       ip->insno, csound->icurTime/csound->esr,
+-            //          ip->offtim, ip->no_end);
+-            ip->ksmps_no_end = ip->no_end;
+-          }
+-          done = ATOMIC_GET(ip->init_done);
+-          if (done == 1) {/* if init-pass has been done */
+-            /* check if next command pending and we are on the
+-               first instrument in the chain */
+-            /* coverity says data already dereferenced by here */
+-            if (/*data &&*/  data->status == CSDEBUG_STATUS_NEXT) {
+-                if (data->debug_instr_ptr == NULL) {
+-                    data->debug_instr_ptr = ip;
+-                    data->debug_opcode_ptr = NULL;
+-                    data->status = CSDEBUG_STATUS_STOPPED;
+-                    csoundDebuggerBreakpointReached(csound);
+-                    return 0;
+-                } else {
+-                    ip = data->debug_instr_ptr;
+-                    data->debug_instr_ptr = NULL;
+-                }
+-            }
+-            /* check if we have arrived at an instrument breakpoint */
+-            bkpt_node_t *bp_node = data->bkpt_anchor->next;
+-            while (bp_node && data->status != CSDEBUG_STATUS_NEXT) {
+-              if (bp_node->instr == ip->p1.value && (bp_node->line == -1) ) {
+-                if (bp_node->count < 2) {
+-                  /* skip of 0 or 1 has the same effect */
+-                  data->debug_instr_ptr = ip;
+-                  data->debug_opcode_ptr = NULL;
+-                  data->cur_bkpt = bp_node;
+-                  data->status = CSDEBUG_STATUS_STOPPED;
+-                  csoundDebuggerBreakpointReached(csound);
+-                  bp_node->count = bp_node->skip;
+-                  return 0;
+-                } else {
+-                  bp_node->count--;
+-                }
+-              }
+-              bp_node = bp_node->next;
+-            }
+-            ip->spin = csound->spin;
+-            ip->spout = csound->spraw;
+-            ip->kcounter =  csound->kcounter;
+-            if (ip->ksmps == csound->ksmps) {
+-                opcode_perf_debug(csound, data, ip);
+-            } else { /* when instrument has local ksmps */
+-              int i, n = csound->nspout, start = 0;
+-              int lksmps = ip->ksmps;
+-              int incr = csound->nchnls*lksmps;
+-              int offset =  ip->ksmps_offset;
+-              int early = ip->ksmps_no_end;
+-              ip->spin = csound->spin;
+-              ip->spout = csound->spraw;
+-              ip->kcounter =  csound->kcounter*csound->ksmps/lksmps;
+-
+-              /* we have to deal with sample-accurate code
+-                   whole CS_KSMPS blocks are offset here, the
+-                   remainder is left to each opcode to deal with.
+-                */
+-              while (offset >= lksmps) {
+-                offset -= lksmps;
+-                start += csound->nchnls;
+-              }
+-              ip->ksmps_offset = offset;
+-              if (UNLIKELY(early)) {
+-                n -= (early*csound->nchnls);
+-                ip->ksmps_no_end = early % lksmps;
+-              }
+-
+-              for (i=start; i < n; i+=incr, ip->spin+=incr, ip->spout+=incr) {
+-                  opcode_perf_debug(csound, data, ip);
+-                  ip->kcounter++;
+-                }
+-            }
+-          }
+-          ip->ksmps_offset = 0; /* reset sample-accuracy offset */
+-          ip->ksmps_no_end = 0;  /* reset end of loop samples */
+-          ip = ip->nxtact; /* but this does not allow for all deletions */
+-          if (/*data &&*/ data->status == CSDEBUG_STATUS_NEXT) {
+-            data->debug_instr_ptr = ip; /* we have reached the next
+-                                           instrument. Break */
+-            data->debug_opcode_ptr = NULL;
+-            if (ip != NULL) { /* must defer break until next kperf */
+-              data->status = CSDEBUG_STATUS_STOPPED;
+-              csoundDebuggerBreakpointReached(csound);
+-              return 0;
+-            }
+-          }
+-        }
+-      }
+-    }
+-
+-    if (!data || data->status != CSDEBUG_STATUS_STOPPED)
+-    {
+-    if (!csound->spoutactive) {             /*   results now in spout? */
+-      memset(csound->spout, 0, csound->nspout * sizeof(MYFLT));
+-      memset(csound->spraw, 0, csound->nspout * sizeof(MYFLT));
+-    }
+-    else
+-      make_interleave(csound);
+-    csound->spoutran(csound);               /*      send to audio_out  */
+-    }
+-    return 0;
+-}
+-
+-
+ int csoundReadScoreInternal(CSOUND *csound, const char *str)
+ {
+     OPARMS  *O = csound->oparms;
