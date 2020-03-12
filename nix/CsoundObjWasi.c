@@ -63,7 +63,9 @@ typedef struct _CsoundObj
 WASM_EXPORT
 CsoundObj *CsoundObj_new()
 {
+  printf ("%s \n", "Pre initialize, cool!");
   csoundInitialize(CSOUNDINIT_NO_ATEXIT & CSOUNDINIT_NO_SIGNAL_HANDLER);
+  printf ("%s \n", "Post initialize, cool!");
   CsoundObj *self = calloc(1, sizeof(CsoundObj));
   self->csound = csoundCreate(self);
   self->status = CS_RESET_STATUS;
