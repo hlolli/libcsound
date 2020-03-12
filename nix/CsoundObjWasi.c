@@ -88,14 +88,17 @@ void CsoundObj_setOption(CsoundObj *self, const char *option)
 }
 
 WASM_EXPORT
-int32_t CsoundObj_compile(CsoundObj *self, char *csd, char *odac_override)
+int32_t CsoundObj_compile(CsoundObj *self, char *csdCharArr, char *odac_override)
 {
-    csoundMessage(self->csound, "CsoundObj_compile...\n");
-    int result = 0;
-    if (csd == 0) {
-        csoundMessage(self->csound, "Error: Null CSD.\n");
-        return -1;
-    }
+  char csd[1024];
+  strcpy(csd, csdCharArr);
+  printf("csd: %s\n", csd);
+  csoundMessage(self->csound, "CsoundObj_compile...\n");
+  int result = 0;
+  if (csd == 0) {
+    csoundMessage(self->csound, "Error: Null CSD.\n");
+    return -1;
+  }
 
 #ifdef INIT_STATIC_MODULES
     result = init_static_modules(self->csound);
