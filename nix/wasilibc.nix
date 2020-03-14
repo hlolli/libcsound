@@ -3,10 +3,10 @@
 stdenv.mkDerivation {
   name = "wasilibc-20202202";
   src = fetchFromGitHub {
-    owner = "CraneStation";
+    owner = "WebAssembly";
     repo = "wasi-libc";
-    rev = "8df0d4cd6a559b58d4a34b738a5a766b567448cf";
-    sha256 = "1n4gvgzacpagar2mx8g9950q0brnhwz7jg2q44sa5mnjmlnkiqhh";
+    rev = "0cc57ac7b4c0e48a9e4a99e52538c793f2516f31";
+    sha256 = "1yijkp5nwk19g1hprl8ga39x801nhqxd1ybyba8bpj2ha3dycss9";
   };
   makeFlags = [
     "WASM_CC=${stdenv.cc.targetPrefix}cc"

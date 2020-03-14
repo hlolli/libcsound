@@ -11,6 +11,7 @@ pkgs.callPackage
   (
     { mkShell }:
     let
+      exports = with builtins; (fromJSON (readFile ./exports.json));
       pkgsOrig = import <nixpkgs> {};
       patchClock = pkgsOrig.writeTextFile {
         name = "patchClock";
@@ -52,7 +53,7 @@ pkgs.callPackage
             fs.writeFile(myFile, result, 'utf8', function (err) {
               if (err) return console.log(err);
             });
-          });
+                          });
         '';
       };
       /*
@@ -71,6 +72,7 @@ pkgs.callPackage
         lib = pkgs.lib;
       };
       preprocFlags = ''
+        -DUSE_DOUBLE=1 \
         -DRD_OPTS=0644 \
         -DWR_OPTS=0644 \
         -DO_RDONLY=00 \
@@ -149,15 +151,21 @@ pkgs.callPackage
            '#if defined(HAVE_GCC3) && !defined(__wasi__)'
 
            # debug fileOpen
-           substituteInPlace Engine/envvar.c \
-             --replace '/* check file type */' \
-             ' printf ("Opening file: : %s  \n", (char*) name);'
+           # substituteInPlace Engine/envvar.c \
+           #   --replace '/* check file type */' \
+           #   ' printf ("Opening file: %s  \n", (char*) name);'
+
+           # debug csoundFindFile_{std/Fd}
+           # substituteInPlace Engine/envvar.c \
+           #   --replace 'char  *name, *name2, **searchPath;' \
+           #   'printf ("Finding file: %s  \n", (char*) filename);
+           #    char  *name, *name2, **searchPath;'
 
           # debug findVariableWithName
-          substituteInPlace Engine/csound_type_system.c \
-            --replace 'CS_VARIABLE* returnValue = cs_hash_table_get' \
-            'printf ("Loading var with name:  %s  \n", (char*) name);
-             CS_VARIABLE* returnValue = cs_hash_table_get'
+          # substituteInPlace Engine/csound_type_system.c \
+          #   --replace 'CS_VARIABLE* returnValue = cs_hash_table_get' \
+          #   'printf ("Loading var with name:  %s  \n", (char*) name);
+          #    CS_VARIABLE* returnValue = cs_hash_table_get'
 
            # don't open .csound6rc
            substituteInPlace Top/main.c \
@@ -175,96 +183,62 @@ pkgs.callPackage
                     #include <errno.h>' \
                     --replace 'umask(0077);' ""
 
-                      substituteInPlace Engine/linevent.c \
-                      --replace '#include <ctype.h>' \
-                      '#include <ctype.h>
-                      #include <string.h>
-                      #include <stdlib.h>
-                      #include <unistd.h>
-                      #include <fcntl.h>
-                      #include <errno.h>'
+           substituteInPlace Engine/linevent.c \
+             --replace '#include <ctype.h>' \
+                '#include <ctype.h>
+                 #include <string.h>
+                 #include <stdlib.h>
+                 #include <unistd.h>
+                 #include <fcntl.h>
+                 #include <errno.h>'
 
-                      # substituteInPlace Engine/cs_new_dispatch.c \
-                      #   --replace '#include "csoundCore.h"' \
-                      #             '#include "csoundCore.h"
-                      #              #include <atomic.h>'
+           substituteInPlace Opcodes/urandom.c \
+             --replace '__HAIKU__' \
+               '__wasi__
+                #include <unistd.h>'
 
-                      substituteInPlace Engine/envvar.c \
-                      --replace 'UNLIKELY(getcwd(cwd, len)==NULL)' '0' \
-                      --replace '#include <math.h>' \
-                                '#include <math.h>
-                                 #include <string.h>
-                                 #include <stdlib.h>
-                                 #include <unistd.h>
-                                 #include <fcntl.h>
-                                 #include <errno.h>
+           substituteInPlace InOut/libmpadec/mp3dec.c \
+             --replace '#include "csoundCore.h"' \
+                       '#include "csoundCore.h"
+                        #include <stdlib.h>
+                        #include <stdio.h>
+                        #include <sys/types.h>
+                        #include <unistd.h>
+                        '
+
+           substituteInPlace Opcodes/mp3in.c \
+             --replace '#include "mp3dec.h"' \
+               '#include "mp3dec.h"
+                #include <unistd.h>
+                #include <fcntl.h>'
+
+           substituteInPlace Top/csound.c \
+             --replace 'signal(sigs[i], signal_handler);' "" \
+             --replace 'HAVE_RDTSC' '__NOT_HERE___' \
+             --replace 'static double timeResolutionSeconds = -1.0;' \
+                       'static double timeResolutionSeconds = 0.000001;'
+
+           substituteInPlace Engine/envvar.c \
+             --replace 'UNLIKELY(getcwd(cwd, len)==NULL)' '0' \
+             --replace '#include <math.h>' \
+                       '#include <math.h>
+                        #include <string.h>
+                        #include <stdlib.h>
+                        #include <unistd.h>
+                        #include <fcntl.h>
+                        #include <errno.h>
                       '
 
-                      substituteInPlace Top/csound.c \
-                      --replace 'signal(sigs[i], signal_handler);' "" \
-                        --replace 'HAVE_RDTSC' '__NOT_HERE___' \
-                        --replace 'static double timeResolutionSeconds = -1.0;' \
-                          'static double timeResolutionSeconds = 0.000001;'
+           substituteInPlace Top/main.c \
+             --replace 'csoundUDPServerStart(csound,csound->oparms->daemon);' ""
+                        substituteInPlace Engine/musmon.c \
+             --replace 'csoundUDPServerClose(csound);' ""
 
-                            substituteInPlace Top/main.c \
-                            --replace 'csoundUDPServerStart(csound,csound->oparms->daemon);' ""
-                              substituteInPlace Engine/musmon.c \
-                              --replace 'csoundUDPServerClose(csound);' ""
+           substituteInPlace Engine/new_orc_parser.c \
+             --replace 'csound_orcdebug = O->odebug;' ""
 
-                                substituteInPlace InOut/libmpadec/mp3dec.c \
-                                --replace '#include "csoundCore.h"' \
-                                '#include "csoundCore.h"
-                                #include <stdlib.h>
-                                #include <stdio.h>
-                                #include <sys/types.h>
-                                #include <unistd.h>
-                                '
 
-                                substituteInPlace Engine/new_orc_parser.c \
-                                --replace 'csound_orcdebug = O->odebug;' ""
-
-                                  # substituteInPlace Opcodes/scansyn.c \
-                                  #   --replace PUBLIC "static"
-
-                                  # substituteInPlace Opcodes/framebuffer/OpcodeEntries.c \
-                                  #   --replace PUBLIC "static"
-
-                                  # substituteInPlace Opcodes/emugens/beosc.c \
-                                  #   --replace PUBLIC "static"
-
-                                  # substituteInPlace Top/csound.c \
-                                  # --replace '|| defined(__MACH__)' '|| defined(__MACH__) || defined(__wasi__)'
-
-                                  # sed -n 1210,1220p Top/argdecode.c
-                                  # exit 1
-
-                                  # --replace 'int_least64_t get_real_time(void)' 'int get_real_time(void)' \
-                                  # --replace '(int_least64_t) tv.tv_usec' '(int) tv.tv_usec' \
-                                  # --replace '(int_least64_t) ((uint32_t) tv.tv_sec * (uint64_t) 1000000))' \
-                                  #   '(tv.tv_sec * 1000000))'
-
-                                  # --replace 'return ((int_least64_t) tmp.LowPart + ((int_least64_t) tmp.HighPart <<32));' \
-                                  # '#elif defined(__wasi__)
-                                  #  struct timespec ts;
-                                  #  __wasi_clock_time_get(0, (__wasi_timestamp_t) &ts, NULL);
-                                  #  /* clock_gettime(CLOCK_REALTIME, &ts); */
-                                  #  return (uint32_t) (ts.tv_sec + (ts.tv_nsec * 0.000001));'
-
-                                  # struct timeval t;
-                                  # int r = gettimeofday(&t, NULL);
-                                  # return (double) t.tv_sec + (t.tv_usec * 0.000001);
-                                  # #elif defined(HAVE_GETTIMEOFDAY)
-
-                                  # sed -i '/^typedef long.*$/,$d' Top/csmodule.c
-                                  # echo 'CS_NOINLINE int csoundInitStaticModules(CSOUND *csound)
-                                  #       {return CSOUND_SUCCESS;}' >> Top/csmodule.c
-
-                                  # substituteInPlace Top/csmodule.c \
-                                  #   --replace '#ifndef NACL' '#ifndef __wasi__' \
-                                  #   --replace 'extern long pvsbuffer_localops_init(CSOUND *, void *);' "" \
-                                  #   --replace 'pvsbuffer_localops_init,' ""
-
-                                  rm CMakeLists.txt
+           rm CMakeLists.txt
         '';
         configurePhase = "
           ${pkgsOrig.flex}/bin/flex -B ./Engine/csound_orc.lex > ./Engine/csound_orc.c
@@ -298,7 +272,7 @@ pkgs.callPackage
         #  -I{lame}/include/lame \
 
         buildPhase = ''
-          cp ${./CsoundObjWasi.c} ./CsoundObjWasi.c
+          cp ${./helpers.c} ./helpers.c
           clang -O3 -flto \
             -emit-llvm --target=wasm32-wasi -c -S \
             -I./H -I./Engine -I./include -I./ \
@@ -308,7 +282,7 @@ pkgs.callPackage
             -S -emit-llvm \
             -D__BUILDING_LIBCSOUND \
             -D__wasi__=1 ${preprocFlags} \
-            CsoundObjWasi.c \
+            helpers.c \
             Engine/auxfd.c \
             Engine/cfgvar.c \
             Engine/corfiles.c \
@@ -611,22 +585,21 @@ pkgs.callPackage
               --export-all \
               -o libcsound.wasm *.o
 
-                                # --max-memory=536870912 \
-                                # --export csoundInitialize \
-                                # --export csoundCreate \
-                                # clang --target=wasm32-wasi -O3 *.ll -o libcsound.wasm
-                                # {pkgsOrig.llvm_8}/bin/llvm-link *.ll -o libcsound.wasm
-                                # -Wall \
-                                # -o libcsound.wasm
-                                # -I{pkgs.stdenv.cc.bintools.libc}/include \
+              # --export=allocStringMem \
+              # --export=freeStringMem \
+              # ${lib.strings.concatMapStrings (x: " --export=" + x + " ") exports } \
+              # --max-memory=536870912 \
+              # --export csoundInitialize \
+              # --export csoundCreate \
+              # clang --target=wasm32-wasi -O3 *.ll -o libcsound.wasm
+              # {pkgsOrig.llvm_8}/bin/llvm-link *.ll -o libcsound.wasm
+              # -Wall \
+              # -o libcsound.wasm
+              # -I{pkgs.stdenv.cc.bintools.libc}/include \
         '';
         installPhase = ''
-                                                         mkdir -p $out/lib
-                                                         # cp libcsound.wasm $out/lib
-                                                         cp -rf ./* $out
-          # substituteInPlace cmake_install.cmake \
-          #   --replace '/sysroot' sysroot
-          # cmake -P cmake_install.cmake -DCMAKE_INSTALL_PREFIX=$out
+          mkdir -p $out/lib
+          cp -rf ./* $out
         '';
       };
     in
@@ -635,8 +608,11 @@ pkgs.callPackage
         buildInputs = [ csoundP pkgsOrig.file ];
         shellHook = ''
           echo ${csoundP}
-          rm ../tests/wasi/public/libcsound.wasm
-          cp ${csoundP}/libcsound.wasm ../tests/wasi/public
+          rm -f .lib/libcsound.wasm
+          mkdir -p lib
+          cp ${csoundP}/libcsound.wasm lib
+          chmod 0600 lib/libcsound.wasm
+          exit 0
         '';
       }
   ) {}

@@ -87,12 +87,23 @@ void CsoundObj_setOption(CsoundObj *self, const char *option)
   csoundSetOption(self->csound, option);
 }
 
+void hlolli_test(char *text) {
+  printf("text1: %s\n", text);
+  printf("text2: %s\n", (char *) text);
+}
+
+
 WASM_EXPORT
 int32_t CsoundObj_compile(CsoundObj *self, char *csdCharArr, char *odac_override)
 {
   char csd[1024];
   strcpy(csd, csdCharArr);
-  printf("csd: %s\n", csd);
+  printf("csd1: %s\n", (char *) csd);
+  printf("csd2: %d\n", (char *) csd);
+  printf("csd3: %s\n", (char *) csdCharArr);
+  printf("csd4: %d\n", (char *) csdCharArr);
+  printf("csd5: %s\n", (char **) csdCharArr);
+  printf("csd6: %s\n", (char **) csd);
   csoundMessage(self->csound, "CsoundObj_compile...\n");
   int result = 0;
   if (csd == 0) {

@@ -15,3 +15,5 @@ libcsound.wasm
 github-prefetch.json
 result
 lib
+deps.js
+*.log
