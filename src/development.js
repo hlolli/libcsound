@@ -42,32 +42,15 @@ import("./").then(async ({ default: getLibcsound }) => {
     csoundSetParams,
     csoundGetParams,
     csoundGetDebug,
-    csoundSetDebug
+    csoundSetDebug,
+    fs,
+    wasm,
+    createFileDebug
   } = libcsound;
-  console.log("csound version", csoundGetVersion());
-  console.log("csound api version", csoundGetAPIVersion());
+
   csoundInitialize(0);
   const csound = csoundCreate();
-  // const { testCsoundGetDebug, testCsoundSetDebug } = libcsound.wasm.exports;
-  // csoundSetOption(csound, "-+rtaudio=jack");
-  // csoundSetOption(csound, "-odac:dummy");
-  // csoundSetOption(csound, "--0dbfs=1");
-  // console.log("wasm?", testCsoundGetDebug(csound));
-  // testCsoundSetDebug(csound, 1);
-  // console.log("wasm?", testCsoundGetDebug(csound));
-
-  // console.log("debug pre: ", csoundGetDebug(csound));
-  // console.log("params pre: ", csoundGetParams(csound));
-  // csoundSetDebug(csound, 1);
-  // console.log("debug post: ", csoundGetDebug(csound));
-  // setTimeout(() => , 0);
-  // console.log("params post: ", csoundGetParams(csound));
-  // csoundCompileOrc(csound, orcTest);
-  // csoundStart(csound);
-  // csoundEvalCode(csound, orcTest);
+  csoundSetOption(csound, "-o/csound/test1.wav");
+  csoundCompileOrc(csound, orcTest);
+  csoundStart(csound);
 });
-
-// import libcsound from "./libcsound";
-
-// const csound = libcsound.csoundCreate();
-// console.log(libcsound);

@@ -18,6 +18,8 @@ stdenv.mkDerivation {
   postInstall = ''
     mv $out/lib/*/* $out/lib
     ln -s $out/share/wasm32-wasi/undefined-symbols.txt $out/lib/wasi.imports
+    # ALSA hack
+    cp -f ${./ioctl.h} $out/include/sys/ioctl.h
   '';
 
   meta = {

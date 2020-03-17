@@ -43,6 +43,7 @@
         padding: 15px;
         font-family: "Monaco", monospace;
         font-weight: bold;
+        white-space: normal;
       }
 
       textarea.js-code-to-run {
@@ -55,6 +56,9 @@
         height: 30px;
       }
 
+      pre span {
+        display: block;
+      }
       /* console colors */
       pre span.info {
         color: #004aa0;
@@ -71,10 +75,10 @@
     </style>
     <script>
       window.addEventListener("load", function() {
-        ConsoleJS.init({
-          selector: "pre.console",
-          input: "textarea.js-code-to-run"
-        });
+        // ConsoleJS.init({
+        //   selector: "pre.console",
+        //   input: "textarea.js-code-to-run"
+        // });
       });
     </script>
     <div class="container">

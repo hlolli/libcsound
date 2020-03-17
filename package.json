@@ -42,7 +42,9 @@
   },
   "dependencies": {
     "@wasmer/wasi": "^0.10.1",
+    "@wasmer/wasm-transformer": "^0.10.1",
     "@wasmer/wasmfs": "^0.10.1",
-    "google-closure-library": "^20200224.0.0"
+    "google-closure-library": "^20200224.0.0",
+    "path-browserify": "^1.0.1"
   }
 }

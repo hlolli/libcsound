@@ -1,5 +1,5 @@
 import libcsoundPreInit from "@root/libcsound";
-import getLibcsoundWasm from "./module";
+import getLibcsoundWasm, { wasmFs } from "./module";
 import { makeLibcsoundFrontEnd } from "./utils";
 import "./development";
 
@@ -10,6 +10,6 @@ import "./development";
  */
 export default async function() {
   const wasm = await getLibcsoundWasm();
-  const libcsound = makeLibcsoundFrontEnd(wasm, libcsoundPreInit);
+  const libcsound = makeLibcsoundFrontEnd(wasm, wasmFs, libcsoundPreInit);
   return libcsound;
 }

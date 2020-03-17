@@ -16,7 +16,7 @@ export const cleanStdout = stdout => {
   return stdout.replace(regexPattern, "");
 };
 
-export const makeLibcsoundFrontEnd = (wasm, libcsoundPreInit) => {
+export const makeLibcsoundFrontEnd = (wasm, fs, libcsoundPreInit) => {
   const libcsoundOut = Object.keys(libcsoundPreInit).reduce(
     (libcsound, key) => {
       libcsound[key] = libcsoundPreInit[key](wasm);
@@ -24,8 +24,9 @@ export const makeLibcsoundFrontEnd = (wasm, libcsoundPreInit) => {
     },
     {}
   );
-  // Add one wasm specific getter
+  // Add one wasm specific getters
   libcsoundOut["wasm"] = wasm;
+  libcsoundOut["fs"] = fs;
   return libcsoundOut;
 };
 

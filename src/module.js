@@ -1,32 +1,27 @@
+/* eslint-disable */
 /* eslint-disable new-cap */
-import { WASI } from "@wasmer/wasi";
+import { WASI } from "@wasmer/wasi/lib/index.esm.js";
 import { WasmFs } from "@wasmer/wasmfs";
+import browserBindings from "@wasmer/wasi/lib/bindings/browser";
+import { lowerI64Imports } from "@wasmer/wasm-transformer";
 import { cleanStdout, uint2Str } from "./utils";
+import * as path from "path";
 
-const wasmFs = new WasmFs();
-
-const env = {
-  get_real_time: () => performance.now(),
-  get_CPU_time: () => performance.now(),
-  getTimeResolution: () => {},
-  longjmp: (x, y) => x,
-  yylex: () => {},
-  yyerror: () => {},
-  zzlex: () => {},
-  zzerror: () => {},
-  csound_orcparse: () => {},
-  mkstemp: () => {},
-  system: () => {},
-  ifd_init_: () => {}
-};
+export const wasmFs = new WasmFs();
 
 const bindings = {
-  ...WASI.defaultBindings,
-  fs: wasmFs.fs
+  ...browserBindings,
+  fs: wasmFs.fs,
+  path
+};
+
+const preopens = {
+  "/": "/"
 };
 
 const wasi = new WASI({
-  env,
+  preopens,
+  env: {},
   bindings
 });
 
@@ -39,10 +34,12 @@ const defaultMessageCallback = data => {
 
 const load = async () => {
   const { default: response } = await import("../lib/libcsound.wasm");
-  const wasmBytes = new Uint8Array(response).buffer;
-  const module = await WebAssembly.compile(wasmBytes);
+  await wasmFs.volume.mkdirpBase("/csound");
+  const wasmBytes = new Uint8Array(response);
+  const transformedBinary = await lowerI64Imports(wasmBytes);
+  const module = await WebAssembly.compile(transformedBinary);
   const options = wasi.getImports(module);
-  options["env"] = env;
+  options["env"] = {};
   const instance = await WebAssembly.instantiate(module, options);
   wasi.start(instance);
   const stdout = wasmFs.fs.ReadStream("/dev/stdout", "utf8");

@@ -14,6 +14,7 @@ libcsound_browser.js
 libcsound.wasm
 github-prefetch.json
 result
+result-dev
 lib
 deps.js
 *.log

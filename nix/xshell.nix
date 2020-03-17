@@ -4,6 +4,7 @@ with import <nixpkgs> {
   crossSystem = {
     config = "wasm32-unknown-wasi";
     libc = "wasilibc";
+    cc = (import <nixpkgs> {}).llvmPackages_9.lldClang;
     useLLVM = true;
   };
 };
@@ -26,17 +27,29 @@ pkgs.callPackage
             if (err) { return console.log(err); }
             const regex = "\\/\\* find out CPU frequency based on.*" +
                           "initialise a timer structure \\*\\/";
-            const result = data.replace(new RegExp(regex, 'is'), "");
+            const replace = `static int getTimeResolution(void) { return 0; }
+            int gettimeofday (struct timeval *__restrict, void *__restrict);
+            static inline int_least64_t get_real_time(void) {
+              struct timeval tv;
+              gettimeofday(&tv, NULL);
+              return ((int_least64_t) tv.tv_usec
+                + (int_least64_t) ((uint32_t) tv.tv_sec * (uint64_t) 1000000));}
+            clock_t clock (void);
+            static inline int_least64_t get_CPU_time(void) {
+              return ((int_least64_t) ((uint32_t) clock()));
+            }`;
+            const result = data.replace(new RegExp(regex, 'is'), replace);
             fs.writeFile(myFile, result, 'utf8', function (err) {
               if (err) return console.log(err);
             });
           });
         '';
       };
-      patchPrint = pkgsOrig.writeTextFile {
-        name = "patchPrint";
+
+      patchGetCWD = pkgsOrig.writeTextFile {
+        name = "patchGetCWD";
         executable = true;
-        destination = "/bin/patchPrint";
+        destination = "/bin/patchGetCWD";
         text = ''
           #!${pkgsOrig.nodejs}/bin/node
 
@@ -45,23 +58,22 @@ pkgs.callPackage
           const fs = require('fs')
           fs.readFile(myFile, 'utf8', function (err,data) {
             if (err) { return console.log(err); }
-            const regex = "static void print_messages.*" +
-                          "#define QUEUESIZ 64";
+            const regex = "static int32_t getcurdir.*" +
+                          "#ifndef MAXLINE";
             const result = data.replace(new RegExp(regex, 'is'),
-             "extern void print_messages(CSOUND *csound, int attr, const char *str); \n" +
-             "#define QUEUESIZ 64");
+             `
+             static int32_t getcurdir(CSOUND *csound, GETCWD *p) {
+               p->Scd->size = 2;
+               p->Scd->data = "/";
+               return OK;
+             }
+             #ifndef MAXLINE`);
             fs.writeFile(myFile, result, 'utf8', function (err) {
               if (err) return console.log(err);
             });
-                          });
+            });
         '';
       };
-      /*
-      .replace("if(csound->oparms_.msglevel)",
-      "csoundMessageStringCallback = print_messages;" +
-      "\nif(csound->oparms_.msglevel)").replace(
-      "csoundSetMessageCallback(csound, no_op);", "");
-      */
 
       libsndfileP = import ./sndfileWasi.nix {
         inherit pkgs;
@@ -73,22 +85,9 @@ pkgs.callPackage
       };
       preprocFlags = ''
         -DUSE_DOUBLE=1 \
-        -DRD_OPTS=0644 \
-        -DWR_OPTS=0644 \
-        -DO_RDONLY=00 \
-        -DO_WRONLY=01 \
-        -DO_CREAT=0100 \
-        -DO_TRUNC=01000 \
-        -DO_NONBLOCK=04000 \
-        -DO_NDELAY=04000 \
-        -DF_GETFL=3 \
-        -DF_SETFL=4 \
         -DLINUX=0 \
-        -DRTLD_GLOBAL=0 \
-        -DRTLD_LAZY=1 \
-        -DRTLD_NOW=2 \
+        -DO_NDELAY=O_NONBLOCK \
         -DHAVE_STRLCAT=1 \
-        -DMEMDEBUG=1 \
         -Wno-unknown-attributes \
         -Wno-shift-op-parentheses \
         -Wno-bitwise-op-parentheses \
@@ -107,138 +106,123 @@ pkgs.callPackage
         buildInputs = [ libsndfileP pkgsOrig.flex pkgsOrig.bison ];
         patches = [ ./argdecode.patch ];
         postPatch = ''
-           echo ${wasilibc}
-           # Experimental setjmp patching
-           find ./ -type f -exec sed -i -e 's/#include <setjmp.h>//g' {} \;
-           find ./ -type f -exec sed -i -e 's/csound->LongJmp(.*)//g' {} \;
-           find ./ -type f -exec sed -i -e 's/longjmp(.*)//g' {} \;
-           find ./ -type f -exec sed -i -e 's/jmp_buf/int/g' {} \;
-           find ./ -type f -exec sed -i -e 's/setjmp(csound->exitjmp)/0/g' {} \;
+          echo ${wasilibc}
+          # Experimental setjmp patching
+          find ./ -type f -exec sed -i -e 's/#include <setjmp.h>//g' {} \;
+          find ./ -type f -exec sed -i -e 's/csound->LongJmp(.*)//g' {} \;
+          find ./ -type f -exec sed -i -e 's/longjmp(.*)//g' {} \;
+          find ./ -type f -exec sed -i -e 's/jmp_buf/int/g' {} \;
+          find ./ -type f -exec sed -i -e 's/setjmp(csound->exitjmp)/0/g' {} \;
 
-           find ./ -type f -exec sed -i -e 's/HAVE_PTHREAD/FFS_NO_PTHREADS/g' {} \;
-           find ./ -type f -exec sed -i -e 's/#ifdef LINUX/#ifdef _NOT_LINUX_/g' {} \;
-           find ./ -type f -exec sed -i -e 's/if(LINUX)/if(_NOT_LINUX_)/g' {} \;
-           find ./ -type f -exec sed -i -e 's/if (LINUX)/if(_NOT_LINUX_)/g' {} \;
-           find ./ -type f -exec sed -i -e 's/defined(LINUX)/defined(_NOT_LINUX_)/g' {} \;
-           # find ./ -type f -exec sed -i -e 's/u?int_least64_t/uint64_t/g' {} \;
+          find ./ -type f -exec sed -i -e 's/HAVE_PTHREAD/FFS_NO_PTHREADS/g' {} \;
+          find ./ -type f -exec sed -i -e 's/#ifdef LINUX/#ifdef _NOT_LINUX_/g' {} \;
+          find ./ -type f -exec sed -i -e 's/if(LINUX)/if(_NOT_LINUX_)/g' {} \;
+          find ./ -type f -exec sed -i -e 's/if (LINUX)/if(_NOT_LINUX_)/g' {} \;
+          find ./ -type f -exec sed -i -e 's/defined(LINUX)/defined(_NOT_LINUX_)/g' {} \;
 
-           # don't export dynamic modules
-           find ./ -type f -exec sed -i -e 's/PUBLIC.*int.*csoundModuleCreate/static int csoundModuleCreate/g' {} \;
-           find ./ -type f -exec sed -i -e 's/PUBLIC.*int32_t.*csoundModuleCreate/static int32_t csoundModuleCreate/g' {} \;
-           find ./ -type f -exec sed -i -e 's/PUBLIC.*int.*csound_opcode_init/static int csound_opcode_init/g' {} \;
-           find ./ -type f -exec sed -i -e 's/PUBLIC.*int32_t.*csound_opcode_init/static int32_t csound_opcode_init/g' {} \;
-           find ./ -type f -exec sed -i -e 's/PUBLIC.*int.*csoundModuleInfo/static int csoundModuleInfo/g' {} \;
-           find ./ -type f -exec sed -i -e 's/PUBLIC.*int32_t.*csoundModuleInfo/static int32_t csoundModuleInfo/g' {} \;
-           find ./ -type f -exec sed -i -e 's/PUBLIC.*NGFENS.*\*csound_fgen_init/static NGFENS *csound_fgen_init/g' {} \;
+          # don't export dynamic modules
+          find ./ -type f -exec sed -i -e 's/PUBLIC.*int.*csoundModuleCreate/static int csoundModuleCreate/g' {} \;
+          find ./ -type f -exec sed -i -e 's/PUBLIC.*int32_t.*csoundModuleCreate/static int32_t csoundModuleCreate/g' {} \;
+          find ./ -type f -exec sed -i -e 's/PUBLIC.*int.*csound_opcode_init/static int csound_opcode_init/g' {} \;
+          find ./ -type f -exec sed -i -e 's/PUBLIC.*int32_t.*csound_opcode_init/static int32_t csound_opcode_init/g' {} \;
+          find ./ -type f -exec sed -i -e 's/PUBLIC.*int.*csoundModuleInfo/static int csoundModuleInfo/g' {} \;
+          find ./ -type f -exec sed -i -e 's/PUBLIC.*int32_t.*csoundModuleInfo/static int32_t csoundModuleInfo/g' {} \;
+          find ./ -type f -exec sed -i -e 's/PUBLIC.*NGFENS.*\*csound_fgen_init/static NGFENS *csound_fgen_init/g' {} \;
 
-           # Don't initialize static_modules which are not compiled in wasm env
-           substituteInPlace Top/csmodule.c \
-             --replace '#ifndef NACL' '#ifndef __wasi__'
+          # Don't initialize static_modules which are not compiled in wasm env
+          substituteInPlace Top/csmodule.c \
+            --replace '#ifndef NACL' '#ifndef __wasi__'
 
-           # Patch 64bit integer clock
-           ${patchClock}/bin/patchClock Top/csound.c
+          # Patch 64bit integer clock
+          ${patchClock}/bin/patchClock Top/csound.c
 
-           # Patch csoundMessage
-           # {patchPrint}/bin/patchPrint Engine/insert.c
+          # Patch getCWD
+          ${patchGetCWD}/bin/patchGetCWD Opcodes/date.c
 
-           touch include/float-version.h
-           substituteInPlace Top/csmodule.c \
-             --replace '#include <dlfcn.h>' ""
-           substituteInPlace Engine/csound_orc.y \
-             --replace 'csound_orcnerrs' "0"
-           substituteInPlace include/sysdep.h \
-             --replace '#if defined(HAVE_GCC3) && !defined(SWIG)' \
-           '#if defined(HAVE_GCC3) && !defined(__wasi__)'
+          touch include/float-version.h
+          substituteInPlace Top/csmodule.c \
+            --replace '#include <dlfcn.h>' ""
+          substituteInPlace Engine/csound_orc.y \
+            --replace 'csound_orcnerrs' "0"
+          substituteInPlace include/sysdep.h \
+            --replace '#if defined(HAVE_GCC3) && !defined(SWIG)' \
+          '#if defined(HAVE_GCC3) && !defined(__wasi__)'
 
-           # debug fileOpen
-           # substituteInPlace Engine/envvar.c \
-           #   --replace '/* check file type */' \
-           #   ' printf ("Opening file: %s  \n", (char*) name);'
+          # don't open .csound6rc
+          substituteInPlace Top/main.c \
+            --replace 'checkOptions(csound);' ""
 
-           # debug csoundFindFile_{std/Fd}
-           # substituteInPlace Engine/envvar.c \
-           #   --replace 'char  *name, *name2, **searchPath;' \
-           #   'printf ("Finding file: %s  \n", (char*) filename);
-           #    char  *name, *name2, **searchPath;'
+          substituteInPlace Top/one_file.c \
+            --replace '#include "corfile.h"' \
+                  '#include "corfile.h"
+                   #include <sys/types.h>
+                   #include <sys/stat.h>
+                   #include <string.h>
+                   #include <stdlib.h>
+                   #include <unistd.h>
+                   #include <fcntl.h>
+                   #include <errno.h>' \
+                   --replace 'umask(0077);' "" \
+                   --replace 'mkstemp(lbuf)' \
+                   'open(lbuf, 02)' \
+                   --replace 'system(sys)' '-1'
 
-          # debug findVariableWithName
-          # substituteInPlace Engine/csound_type_system.c \
-          #   --replace 'CS_VARIABLE* returnValue = cs_hash_table_get' \
-          #   'printf ("Loading var with name:  %s  \n", (char*) name);
-          #    CS_VARIABLE* returnValue = cs_hash_table_get'
-
-           # don't open .csound6rc
-           substituteInPlace Top/main.c \
-             --replace 'checkOptions(csound);' ""
-
-           substituteInPlace Top/one_file.c \
-             --replace '#include "corfile.h"' \
-                   '#include "corfile.h"
-                    #include <sys/types.h>
-                    #include <sys/stat.h>
-                    #include <string.h>
-                    #include <stdlib.h>
-                    #include <unistd.h>
-                    #include <fcntl.h>
-                    #include <errno.h>' \
-                    --replace 'umask(0077);' ""
-
-           substituteInPlace Engine/linevent.c \
-             --replace '#include <ctype.h>' \
-                '#include <ctype.h>
-                 #include <string.h>
-                 #include <stdlib.h>
-                 #include <unistd.h>
-                 #include <fcntl.h>
-                 #include <errno.h>'
-
-           substituteInPlace Opcodes/urandom.c \
-             --replace '__HAIKU__' \
-               '__wasi__
-                #include <unistd.h>'
-
-           substituteInPlace InOut/libmpadec/mp3dec.c \
-             --replace '#include "csoundCore.h"' \
-                       '#include "csoundCore.h"
-                        #include <stdlib.h>
-                        #include <stdio.h>
-                        #include <sys/types.h>
-                        #include <unistd.h>
-                        '
-
-           substituteInPlace Opcodes/mp3in.c \
-             --replace '#include "mp3dec.h"' \
-               '#include "mp3dec.h"
+          substituteInPlace Engine/linevent.c \
+            --replace '#include <ctype.h>' \
+               '#include <ctype.h>
+                #include <string.h>
+                #include <stdlib.h>
                 #include <unistd.h>
-                #include <fcntl.h>'
+                #include <fcntl.h>
+                #include <errno.h>'
 
-           substituteInPlace Top/csound.c \
-             --replace 'signal(sigs[i], signal_handler);' "" \
-             --replace 'HAVE_RDTSC' '__NOT_HERE___' \
-             --replace 'static double timeResolutionSeconds = -1.0;' \
-                       'static double timeResolutionSeconds = 0.000001;'
+          substituteInPlace Opcodes/urandom.c \
+            --replace '__HAIKU__' \
+              '__wasi__
+               #include <unistd.h>'
 
-           substituteInPlace Engine/envvar.c \
-             --replace 'UNLIKELY(getcwd(cwd, len)==NULL)' '0' \
-             --replace '#include <math.h>' \
-                       '#include <math.h>
-                        #include <string.h>
-                        #include <stdlib.h>
-                        #include <unistd.h>
-                        #include <fcntl.h>
-                        #include <errno.h>
-                      '
+          substituteInPlace InOut/libmpadec/mp3dec.c \
+            --replace '#include "csoundCore.h"' \
+                      '#include "csoundCore.h"
+                       #include <stdlib.h>
+                       #include <stdio.h>
+                       #include <sys/types.h>
+                       #include <unistd.h>
+                       '
 
-           substituteInPlace Top/main.c \
-             --replace 'csoundUDPServerStart(csound,csound->oparms->daemon);' ""
-                        substituteInPlace Engine/musmon.c \
-             --replace 'csoundUDPServerClose(csound);' ""
+          substituteInPlace Opcodes/mp3in.c \
+            --replace '#include "mp3dec.h"' \
+              '#include "mp3dec.h"
+               #include <unistd.h>
+               #include <fcntl.h>'
 
-           substituteInPlace Engine/new_orc_parser.c \
-             --replace 'csound_orcdebug = O->odebug;' ""
+          substituteInPlace Top/csound.c \
+            --replace 'signal(sigs[i], signal_handler);' "" \
+            --replace 'HAVE_RDTSC' '__NOT_HERE___' \
+            --replace 'static double timeResolutionSeconds = -1.0;' \
+                      'static double timeResolutionSeconds = 0.000001;'
+
+          substituteInPlace Engine/envvar.c \
+            --replace 'UNLIKELY(getcwd(cwd, len)==NULL)' '0' \
+            --replace '#include <math.h>' \
+                      '#include <math.h>
+                       #include <string.h>
+                       #include <stdlib.h>
+                       #include <unistd.h>
+                       #include <fcntl.h>
+                       #include <errno.h>
+                     '
+
+          substituteInPlace Top/main.c \
+            --replace 'csoundUDPServerStart(csound,csound->oparms->daemon);' ""
+                       substituteInPlace Engine/musmon.c \
+            --replace 'csoundUDPServerClose(csound);' ""
+
+          substituteInPlace Engine/new_orc_parser.c \
+            --replace 'csound_orcdebug = O->odebug;' ""
 
 
-           rm CMakeLists.txt
+          rm CMakeLists.txt
         '';
         configurePhase = "
           ${pkgsOrig.flex}/bin/flex -B ./Engine/csound_orc.lex > ./Engine/csound_orc.c
@@ -279,9 +263,10 @@ pkgs.callPackage
             -I./InOut/libmpadec \
             -I${libsndfileP.dev}/include \
             -I${wasilibc}/include \
-            -S -emit-llvm \
+            -D_WASI_EMULATED_MMAN \
             -D__BUILDING_LIBCSOUND \
             -D__wasi__=1 ${preprocFlags} \
+            ${wasilibc}/share/wasm32-wasi/include-all.c \
             helpers.c \
             Engine/auxfd.c \
             Engine/cfgvar.c \
@@ -529,7 +514,7 @@ pkgs.callPackage
             Top/threads.c \
             Top/threadsafe.c \
             Top/utility.c \
-            Top/csound.c \
+            Top/csound.c
 
             # echo "Compile c++ modules"
             # find ./ -type f -exec sed -i -e 's/u?int_least64_t/uint64_t/g' {} \;
@@ -566,14 +551,12 @@ pkgs.callPackage
               do
               ${pkgsOrig.llvm_9}/bin/llc -march=wasm32 -filetype=obj $f
             done
-            echo ${pkgs.stdenv.cc.cc} ${libsndfileP.out} ${wasilibc}/lib
 
             echo "Link wasm obj to single exe"
-            # rm csound_scoparse.s.o
             ${pkgsOrig.lld_9}/bin/wasm-ld \
               --lto-O3 \
               --no-demangle \
-              --no-entry \
+              -entry=_start \
               -error-limit=0 \
               --allow-undefined \
               --stack-first \
@@ -582,20 +565,11 @@ pkgs.callPackage
               -L${wasilibc}/lib \
               -L${libsndfileP.out}/lib \
               -lc -lm -ldl -lsndfile \
+              -lwasi-emulated-mman \
               --export-all \
-              -o libcsound.wasm *.o
+              ${wasilibc}/lib/crt1.o *.o \
+              -o libcsound.wasm
 
-              # --export=allocStringMem \
-              # --export=freeStringMem \
-              # ${lib.strings.concatMapStrings (x: " --export=" + x + " ") exports } \
-              # --max-memory=536870912 \
-              # --export csoundInitialize \
-              # --export csoundCreate \
-              # clang --target=wasm32-wasi -O3 *.ll -o libcsound.wasm
-              # {pkgsOrig.llvm_8}/bin/llvm-link *.ll -o libcsound.wasm
-              # -Wall \
-              # -o libcsound.wasm
-              # -I{pkgs.stdenv.cc.bintools.libc}/include \
         '';
         installPhase = ''
           mkdir -p $out/lib
