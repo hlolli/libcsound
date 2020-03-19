@@ -1,11 +1,12 @@
 const webpack = require("webpack");
 const path = require("path");
+const CompressionPlugin = require("compression-webpack-plugin");
 const BundleAnalyzerPlugin = require("webpack-bundle-analyzer")
   .BundleAnalyzerPlugin;
 const { CleanWebpackPlugin } = require("clean-webpack-plugin");
 const ClosurePlugin = require("closure-webpack-plugin");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
-const isProduction = process.env.WEBPACK_MODE === "production";
+const isProduction = process.env.NODE_ENV === "production";
 const isNode = process.env.TARGET === "node";
 const analyze = process.env.ANALYZE === "true";
 const target = isNode ? "node" : "web";
@@ -17,9 +18,10 @@ module.exports = {
   },
   output: {
     path: isProduction
-      ? path.resolve(__dirname, "lib")
+      ? path.resolve(__dirname, "dist")
       : path.resolve(__dirname, "public"),
-    filename: isNode ? "libcsound.node.js" : "libcsound.js"
+    filename: isNode ? "libcsound.node.js" : "libcsound.js",
+    globalObject: isProduction ? "window" : "this"
   },
   resolve: {
     alias: {
@@ -29,33 +31,34 @@ module.exports = {
   },
   optimization: {
     minimize: isProduction,
-    minimizer: [
-      new ClosurePlugin(
-        {
-          // mode: "STANDARD"
-          mode: "AGGRESSIVE_BUNDLE"
-          // extraCommandArgs: ["--externs src/externs/perf_hoooks.js"]
-        },
-        {
-          languageOut: "ECMASCRIPT_2015"
-        }
-      )
-    ],
-    splitChunks: {
-      minSize: 0
-    }
-    // concatenateModules: true,
+    concatenateModules: false
+    // minimizer: [
+    //   new ClosurePlugin(
+    //     {
+    //       // mode: "STANDARD"
+    //       mode: "AGGRESSIVE_BUNDLE"
+    //       // extraCommandArgs: ["--externs src/externs/perf_hoooks.js"]
+    //     },
+    //     {
+    //       languageOut: "ECMASCRIPT_2015"
+    //     }
+    //   )
+    // ],
+    // splitChunks: {
+    //   minSize: 0
+    // }
     // mangleWasmImports: true
   },
-  devtool: "source-map",
+  devtool: isProduction ? "hidden-source-map" : "source-map",
   devServer: {
     open: true,
     contentBase: path.resolve(__dirname, "public"),
-    inline: !isProduction
+    inline: false // !isProduction
   },
   // experiments: { asyncWebAssembly: false, importAsync: false },
   module: {
     rules: [
+      // { loader: "workerize-loader", options: { inline: true } },
       {
         test: /\.js$/,
         enforce: "pre",
@@ -67,34 +70,38 @@ module.exports = {
         }
       },
       {
-        test: /\.wasm$/i,
+        test: /\.wasm$|\.wasm.zlib$/i,
         type: "javascript/auto",
         use: "arraybuffer-loader"
+      },
+      {
+        test: /\.worklet.js$/i,
+        use: {
+          loader: "url-loader",
+          options: { esModule: false, mimetype: "text/javascript" }
+        }
       }
     ]
   },
   plugins: [
     new CleanWebpackPlugin(),
-    new ClosurePlugin.LibraryPlugin({
-      closureLibraryBase: require.resolve(
-        "google-closure-library/closure/goog/base"
-      ),
-      deps: [
-        require.resolve("google-closure-library/closure/goog/deps"),
-        "./deps.js"
-      ]
-    }),
+    // new ClosurePlugin.LibraryPlugin({
+    //   closureLibraryBase: require.resolve(
+    //     "google-closure-library/closure/goog/base"
+    //   ),
+    //   deps: [
+    //     require.resolve("google-closure-library/closure/goog/deps"),
+    //     "./deps.js"
+    //   ]
+    // }),
     new webpack.ProvidePlugin({
       goog: "google-closure-library/closure/goog/base"
     }),
     new webpack.optimize.LimitChunkCountPlugin({
-      maxChunks: 2
+      maxChunks: 1
     })
-  ]
-    .concat(
-      !isProduction
-        ? [new HtmlWebpackPlugin({ template: "./src/dev.html" })]
-        : []
-    )
-    .concat(analyze ? [new BundleAnalyzerPlugin()] : [])
+  ].concat(
+    !isProduction ? [new HtmlWebpackPlugin({ template: "./src/dev.html" })] : []
+  )
+  // .concat(analyze ? [new BundleAnalyzerPlugin()] : [])
 };

@@ -16,5 +16,6 @@ github-prefetch.json
 result
 result-dev
 lib
+dist
 deps.js
 *.log

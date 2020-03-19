@@ -1,4 +1,7 @@
-import { sizeOf } from "./primitives";
+const sizeOf = {
+  int: 4,
+  MYFLT: 4
+};
 
 const decoder = new TextDecoder("utf8");
 const encoder = new TextEncoder("utf-8");
@@ -24,8 +27,6 @@ export const makeLibcsoundFrontEnd = (wasm, fs, libcsoundPreInit) => {
     },
     {}
   );
-  // Add one wasm specific getters
-  libcsoundOut["wasm"] = wasm;
   libcsoundOut["fs"] = fs;
   return libcsoundOut;
 };

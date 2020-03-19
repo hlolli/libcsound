@@ -83,7 +83,9 @@ pkgs.callPackage
         fetchFromGitHub = pkgs.fetchFromGitHub;
         lib = pkgs.lib;
       };
+      csoundRev = "2d1d5eece2e532026f9b98f22e24662acb2fde90";
       preprocFlags = ''
+        -DGIT_HASH_VALUE=${csoundRev} \
         -DUSE_DOUBLE=1 \
         -DLINUX=0 \
         -DO_NDELAY=O_NONBLOCK \
@@ -99,7 +101,7 @@ pkgs.callPackage
         src = fetchFromGitHub {
           owner = "csound";
           repo = "csound";
-          rev = "2d1d5eece2e532026f9b98f22e24662acb2fde90";
+          rev = csoundRev;
           sha256 = "1v0pai5n1ajl033ck59nby295p7gk14f1ag0529jy6pvmsyfiidp";
         };
 
@@ -200,7 +202,8 @@ pkgs.callPackage
             --replace 'signal(sigs[i], signal_handler);' "" \
             --replace 'HAVE_RDTSC' '__NOT_HERE___' \
             --replace 'static double timeResolutionSeconds = -1.0;' \
-                      'static double timeResolutionSeconds = 0.000001;'
+                      'static double timeResolutionSeconds = 0.000001;' \
+            --replace 'strcpy(s, "alsa");' 'strcpy(s, "dummy");'
 
           substituteInPlace Engine/envvar.c \
             --replace 'UNLIKELY(getcwd(cwd, len)==NULL)' '0' \
@@ -579,12 +582,15 @@ pkgs.callPackage
     in
       mkShell {
         nativeBuildInputs = [];
-        buildInputs = [ csoundP pkgsOrig.file ];
+        buildInputs = [ csoundP ];
         shellHook = ''
           echo ${csoundP}
           rm -f .lib/libcsound.wasm
           mkdir -p lib
           cp ${csoundP}/libcsound.wasm lib
+          # make a compressed version for the browser bundle
+          ${pkgsOrig.zopfli}/bin/zopfli --zlib -c \
+            ${csoundP}/libcsound.wasm > lib/libcsound.wasm.zlib
           chmod 0600 lib/libcsound.wasm
           exit 0
         '';

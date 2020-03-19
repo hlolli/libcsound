@@ -2,6 +2,7 @@
 /* eslint-disable new-cap */
 import { WASI } from "@wasmer/wasi/lib/index.esm.js";
 import { WasmFs } from "@wasmer/wasmfs";
+import { inflate } from "pako";
 import browserBindings from "@wasmer/wasi/lib/bindings/browser";
 import { lowerI64Imports } from "@wasmer/wasm-transformer";
 import { cleanStdout, uint2Str } from "./utils";
@@ -33,9 +34,10 @@ const defaultMessageCallback = data => {
 };
 
 const load = async () => {
-  const { default: response } = await import("../lib/libcsound.wasm");
+  const { default: response } = await import("../lib/libcsound.wasm.zlib");
   await wasmFs.volume.mkdirpBase("/csound");
-  const wasmBytes = new Uint8Array(response);
+  const wasmZlib = new Uint8Array(response);
+  const wasmBytes = inflate(wasmZlib);
   const transformedBinary = await lowerI64Imports(wasmBytes);
   const module = await WebAssembly.compile(transformedBinary);
   const options = wasi.getImports(module);
