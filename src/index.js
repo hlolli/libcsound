@@ -5,6 +5,9 @@
 // import "./development";
 
 import worker from "workerize-loader?ready&inline!./worker";
+// import worker from "workerize-loader?ready!./worker";
+// import worker from "workerize-loader";
+// import * as csoundWorker from "./worker";
 
 /*
 export default async function init() {
@@ -14,33 +17,37 @@ export default async function init() {
 }
 */
 
+const orcTest = `
+  instr 1
+    prints "GOOD"
+    aout vco2 0.5, 440
+    outs aout, aout
+  endin
+`;
+
 /**
  * The default entry for libcsound es7 module
  * @async
  * @return {Promise.<Object>}
  */
-
 export default async function init() {
-  // const wasm = await getLibcsoundWasm();
-  // const libcsound = makeLibcsoundFrontEnd(wasm, wasmFs, libcsoundPreInit);
   const csoundWorker = worker();
   await csoundWorker.ready;
-  csoundWorker.onmessage = ({ data }) => {
-    if (typeof data["error"] === "object") {
-      console.log(`[worker:error] ${data.error.message}`);
-    }
-  };
-  csoundWorker.onerror = args => {
-    console.log("ERROR?", args);
-  };
-  console.log(csoundWorker);
   await csoundWorker.initWasm();
   const csound = await csoundWorker.csoundCreate();
+  await csoundWorker.csoundInitialize(0);
+  await csoundWorker.csoundSetOption(csound, "-odac");
+  await csoundWorker.csoundCompileOrc(csound, orcTest);
+  await csoundWorker.csoundStart(csound);
   const sr = await csoundWorker.csoundGetSr(csound);
-  // console.log("SR:", sr);
-  return sr;
+  return 0;
 }
 
-init().then(r => {
-  console.log("RESULT", r);
-});
+init().then(r => {});
+
+if (module.hot) {
+  module.hot.accept("./worker.js", function() {
+    console.log("Accepting the updated printMe module!");
+    init().then(r => {});
+  });
+}

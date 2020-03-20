@@ -6,6 +6,7 @@ import { inflate } from "pako";
 import browserBindings from "@wasmer/wasi/lib/bindings/browser";
 import { lowerI64Imports } from "@wasmer/wasm-transformer";
 import { cleanStdout, uint2Str } from "./utils";
+import { LineReader } from "line-reader-browser";
 import * as path from "path";
 
 export const wasmFs = new WasmFs();
@@ -26,11 +27,72 @@ const wasi = new WASI({
   bindings
 });
 
-const defaultMessageCallback = data => {
+let stdErrPos = 0;
+const stdErrBuffer = [];
+const stdErrCallback = data => {
   const cleanString = cleanStdout(uint2Str(data));
-  cleanString.split("\n").forEach(line => {
-    console.log(line);
-  });
+  if (cleanString.includes("\n")) {
+    const [firstEl, ...next] = cleanString.split("\n");
+    let outstr = "";
+    while (stdErrBuffer.length > 0) {
+      outstr += stdErrBuffer[0];
+      stdErrBuffer.shift();
+    }
+    outstr += firstEl;
+    // here the actual callback takes place
+    console.log(outstr);
+    next.forEach(s => stdErrBuffer.push(s));
+  } else {
+    stdErrBuffer.push(cleanString);
+  }
+};
+
+const createStdErrStream = () => {
+  wasmFs.fs.watch(
+    "/dev/stderr",
+    { encoding: "buffer" },
+    (eventType, filename) => {
+      if (filename) {
+        const contents = wasmFs.fs.readFileSync("/dev/stderr");
+        stdErrCallback(contents.slice(stdErrPos));
+        stdErrPos = contents.length;
+      }
+    }
+  );
+};
+
+let stdOutPos = 0;
+const stdOutBuffer = [];
+const stdOutCallback = data => {
+  const cleanString = cleanStdout(uint2Str(data));
+  if (cleanString.includes("\n")) {
+    const [firstEl, ...next] = cleanString.split("\n");
+    let outstr = "";
+    while (stdOutBuffer.length > 0) {
+      outstr += stdOutBuffer[0];
+      stdOutBuffer.shift();
+    }
+    outstr += firstEl;
+    // here the actual callback takes place
+    console.log(outstr);
+    next.forEach(s => stdOutBuffer.push(s));
+  } else {
+    stdOutBuffer.push(cleanString);
+  }
+};
+
+const createStdOutStream = () => {
+  wasmFs.fs.watch(
+    "/dev/stdout",
+    { encoding: "buffer" },
+    (eventType, filename) => {
+      if (filename) {
+        const contents = wasmFs.fs.readFileSync("/dev/stdout");
+        stdOutCallback(contents.slice(stdOutPos));
+        stdOutPos = contents.length;
+      }
+    }
+  );
 };
 
 const load = async () => {
@@ -44,10 +106,8 @@ const load = async () => {
   options["env"] = {};
   const instance = await WebAssembly.instantiate(module, options);
   wasi.start(instance);
-  const stdout = wasmFs.fs.ReadStream("/dev/stdout", "utf8");
-  const stderr = wasmFs.fs.ReadStream("/dev/stderr", "utf8");
-  stdout.on("data", defaultMessageCallback);
-  stderr.on("data", defaultMessageCallback);
+  createStdErrStream();
+  createStdOutStream();
   return instance;
 };
 

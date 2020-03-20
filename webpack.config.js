@@ -1,10 +1,8 @@
 const webpack = require("webpack");
 const path = require("path");
-const CompressionPlugin = require("compression-webpack-plugin");
-const BundleAnalyzerPlugin = require("webpack-bundle-analyzer")
-  .BundleAnalyzerPlugin;
+const TerserPlugin = require("terser-webpack-plugin");
 const { CleanWebpackPlugin } = require("clean-webpack-plugin");
-const ClosurePlugin = require("closure-webpack-plugin");
+// const ClosurePlugin = require("closure-webpack-plugin");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const isProduction = process.env.NODE_ENV === "production";
 const isNode = process.env.TARGET === "node";
@@ -13,15 +11,13 @@ const target = isNode ? "node" : "web";
 
 module.exports = {
   target,
-  entry: {
-    csound: "./src/index.js"
-  },
+  entry: "./src/index.js",
   output: {
     path: isProduction
       ? path.resolve(__dirname, "dist")
       : path.resolve(__dirname, "public"),
     filename: isNode ? "libcsound.node.js" : "libcsound.js",
-    globalObject: isProduction ? "window" : "this"
+    globalObject: "this" // isProduction ? "window" : "this"
   },
   resolve: {
     alias: {
@@ -31,12 +27,19 @@ module.exports = {
   },
   optimization: {
     minimize: isProduction,
-    concatenateModules: false
+    concatenateModules: true,
+    minimizer: [
+      new TerserPlugin({
+        // exclude: /worker\.js$/i,
+        test: /\.js$/i,
+        terserOptions: { module: true, ecma: 7, mangle: true }
+      })
+    ],
     // minimizer: [
     //   new ClosurePlugin(
     //     {
-    //       // mode: "STANDARD"
-    //       mode: "AGGRESSIVE_BUNDLE"
+    //       mode: "STANDARD"
+    //       // mode: "AGGRESSIVE_BUNDLE"
     //       // extraCommandArgs: ["--externs src/externs/perf_hoooks.js"]
     //     },
     //     {
@@ -44,31 +47,47 @@ module.exports = {
     //     }
     //   )
     // ],
-    // splitChunks: {
-    //   minSize: 0
-    // }
-    // mangleWasmImports: true
+    splitChunks: {
+      minSize: 0
+    },
+    mangleWasmImports: true
   },
   devtool: isProduction ? "hidden-source-map" : "source-map",
   devServer: {
-    open: true,
+    lazy: false,
+    open: false,
     contentBase: path.resolve(__dirname, "public"),
-    inline: false // !isProduction
+    inline: !isProduction
   },
   // experiments: { asyncWebAssembly: false, importAsync: false },
   module: {
+    // noParse: /worker\.js$/,
     rules: [
-      // { loader: "workerize-loader", options: { inline: true } },
       {
         test: /\.js$/,
-        enforce: "pre",
-        exclude: /node_modules/,
         loader: "eslint-loader",
+        exclude: /node_modules/,
         options: {
           configFile: path.resolve(__dirname, ".eslintrc"),
           cache: true
         }
       },
+      // {
+      //   test: /\.js$/,
+      //   // enforce: "pre",
+      //   exclude: /node_modules/
+      //   //   [
+      //   //   path.resolve(__dirname, "src/worker.js"),
+      //   //   path.resolve(__dirname, "src/csound.worklet.js"),
+      //   //   /node_modules/
+      //   // ]
+      // },
+      // {
+      //   loader: "workerize-loader",
+      //   options: { inline: true },
+      //   test: /worker\.js$/
+      //   // include: [path.resolve(__dirname, "src/worker.js")]
+      // },
       {
         test: /\.wasm$|\.wasm.zlib$/i,
         type: "javascript/auto",
@@ -85,23 +104,10 @@ module.exports = {
   },
   plugins: [
     new CleanWebpackPlugin(),
-    // new ClosurePlugin.LibraryPlugin({
-    //   closureLibraryBase: require.resolve(
-    //     "google-closure-library/closure/goog/base"
-    //   ),
-    //   deps: [
-    //     require.resolve("google-closure-library/closure/goog/deps"),
-    //     "./deps.js"
-    //   ]
-    // }),
-    new webpack.ProvidePlugin({
-      goog: "google-closure-library/closure/goog/base"
-    }),
     new webpack.optimize.LimitChunkCountPlugin({
       maxChunks: 1
     })
   ].concat(
     !isProduction ? [new HtmlWebpackPlugin({ template: "./src/dev.html" })] : []
   )
-  // .concat(analyze ? [new BundleAnalyzerPlugin()] : [])
 };

@@ -9,14 +9,15 @@
     "wasm",
     "webassembly",
     "audio",
-    "webaudio"
+    "webaudio",
+    "wasi"
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "compile": "nix-shell nix/xshell.nix",
     "lint": "eslint 'src/**/*.js'",
-    "watch": "webpack --watch --mode=develop",
-    "dev": "npm run build:deps && webpack-dev-server --open",
+    "watch": "webpack --watch --mode develop",
+    "dev": "webpack-dev-server  --hot-only",
     "build": "NODE_ENV=production webpack --mode production",
     "build:deps": "./node_modules/google-closure-library/closure/bin/build/depswriter.py --root_with_prefix 'src ../../../src' > deps.js",
     "build:node": "NODE_ENV=production TARGET=node webpack --mode production"
@@ -25,19 +26,16 @@
     "arraybuffer-loader": "^1.0.8",
     "clean-webpack-plugin": "^3.0.0",
     "closure-webpack-plugin": "^2.3.0",
-    "compression-webpack-plugin": "^3.1.0",
     "eslint": "^6.8.0",
     "eslint-config-google": "^0.14.0",
     "eslint-config-prettier": "^6.10.0",
     "eslint-loader": "^3.0.3",
     "eslint-plugin-closure": "^0.1.1",
-    "google-closure-compiler": "^20200224.0.0",
     "html-webpack-plugin": "^3.2.0",
-    "install": "^0.13.0",
     "raw-loader": "^4.0.0",
+    "terser-webpack-plugin": "^2.3.5",
     "url-loader": "^4.0.0",
     "webpack": "^4.42.0",
-    "webpack-bundle-analyzer": "^3.6.1",
     "webpack-cli": "^3.3.11",
     "webpack-dev-server": "^3.10.3",
     "workerize-loader": "^1.1.0"
@@ -46,7 +44,6 @@
     "@wasmer/wasi": "^0.10.1",
     "@wasmer/wasm-transformer": "^0.10.1",
     "@wasmer/wasmfs": "^0.10.1",
-    "google-closure-library": "^20200224.0.0",
     "pako": "^1.0.11",
     "path-browserify": "^1.0.1"
   }
